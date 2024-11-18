@@ -20,10 +20,14 @@ cortex-m-rt = "0.7.0"
 critical-section = "1.1"
 panic-probe = { version = "0.3", features = ["print-defmt"] }
 
+smart-leds = "0.4.0"
+
 embedded-hal-1 = { package = "embedded-hal", version = "=1.0" }
 embedded-hal-async = "1.0"
 embedded-hal-bus = { version = "0.1", features = ["async"] }
 embedded-io-async = { version = "0.6.1", features = ["defmt-03"] }
+
+assign-resources = { git = "https://github.com/adamgreig/assign-resources", rev = "94ad10e2729afdf0fd5a77cd12e68409a982f58a" }
 
 static_cell = { version = "2.1.0", features = ["nightly"] }
 portable-atomic = { version = "1.5", features = ["critical-section"] }

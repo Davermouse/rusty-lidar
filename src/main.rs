@@ -5,35 +5,50 @@
 #![no_std]
 #![no_main]
 
+//mod leds;
 mod lidar;
 
 use cyw43_pio::PioSpi;
 use defmt::*;
-use embassy_executor::Spawner;
-use embassy_rp::multicore::Stack;
-use embassy_rp::{bind_interrupts, uart};
+use assign_resources::assign_resources;
+use embassy_executor::{Executor, Spawner};
+use embassy_rp::multicore::{spawn_core1, Stack};
+use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
-use embassy_rp::peripherals::{DMA_CH0, PIO0, UART0};
+use embassy_rp::peripherals;
+use embassy_rp::peripherals::{ DMA_CH0, PIO0, PIO1, UART0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_rp::uart::{BufferedInterruptHandler, BufferedUart, BufferedUartTx, Config};
+use embassy_rp::uart::BufferedInterruptHandler;
 use embassy_time::{Duration, Timer};
-use embedded_io_async::{Read, Write};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+static mut CORE1_STACK: Stack<4096> = Stack::new();
+static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
+
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
+    PIO1_IRQ_0 => InterruptHandler<PIO1>;
     UART0_IRQ => BufferedInterruptHandler<UART0>;
 });
 
-#[embassy_executor::task]
-async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
-    runner.run().await
+assign_resources! {
+    wifi: WifiResources {
+        pwr: PIN_23,
+        cs: PIN_25,
+        pio: PIO0,
+        dio: PIN_24,
+        clk: PIN_29,
+        dma: DMA_CH0,
+    },
+    lidar: LidarResources {
+        uart: UART0,
+        rx: PIN_17,
+        tx: PIN_16,
+    },
 }
 
-#[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
+async fn setup_wifi(r: WifiResources, spawner: Spawner) -> cyw43::Control<'static> {
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
@@ -44,10 +59,10 @@ async fn main(spawner: Spawner) {
     //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
     //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
 
-    let pwr = Output::new(p.PIN_23, Level::Low);
-    let cs = Output::new(p.PIN_25, Level::High);
-    let mut pio = Pio::new(p.PIO0, Irqs);
-    let spi = PioSpi::new(&mut pio.common, pio.sm0, pio.irq0, cs, p.PIN_24, p.PIN_29, p.DMA_CH0);
+    let pwr = Output::new(r.pwr, Level::Low);
+    let cs = Output::new(r.cs, Level::High);
+    let mut pio = Pio::new(r.pio, Irqs);
+    let spi = PioSpi::new(&mut pio.common, pio.sm0, pio.irq0, cs, r.dio, r.clk, r.dma);
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
@@ -59,16 +74,29 @@ async fn main(spawner: Spawner) {
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    let mut uart_config = uart::Config::default();
-    uart_config.baudrate = 230400;
+    return control;
+}
 
-    static TX_BUF: StaticCell<[u8; 8]> = StaticCell::new();
-    let tx_buf = &mut TX_BUF.init([0; 8])[..];
-    static RX_BUF: StaticCell<[u8; 256]> = StaticCell::new();
-    let rx_buf = &mut RX_BUF.init([0; 256])[..];
-    let mut uart = BufferedUart::new(p.UART0, Irqs, p.PIN_16, p.PIN_17, tx_buf, rx_buf, uart_config);
+#[embassy_executor::task]
+async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
+    runner.run().await
+}
 
-    unwrap!(spawner.spawn(lidar::lidar_task(uart)));
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+   
+    let r = split_resources!(p);
+
+    let mut control = setup_wifi(r.wifi, spawner).await;
+
+    spawn_core1(
+        p.CORE1,
+        unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) }, 
+        move || {
+            let executor1 = EXECUTOR1.init(Executor::new());
+            executor1.run(|spawner| lidar::setup_lidar(r.lidar, Irqs, spawner));
+        });
 
     let delay = Duration::from_secs(1);
     loop {
@@ -79,5 +107,11 @@ async fn main(spawner: Spawner) {
         info!("led off!");
         control.gpio_set(0, false).await;
         Timer::after(delay).await;
+
+        lidar::LIDAR_DATA.lock(|x| {
+            let reading = x.borrow();
+
+            info!("Distance 270: {} {}", reading.distances[270], reading.intensities[270]);
+        });
     }
 }
