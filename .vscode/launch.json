@@ -1,0 +1,29 @@
+{
+    "configurations": [
+      {
+        "type": "probe-rs-debug",
+        "request": "launch",
+        "name": "probe-rs Test",
+        "cwd": "",
+        "connectUnderReset": false,
+        "chip": "RP2040",
+        "runtimeExecutable": "/opt/homebrew/bin/probe-rs",
+        "flashingConfig": {
+          "flashingEnabled": true,
+          "haltAfterReset": true
+        },
+        "coreConfigs": [
+          {
+            "coreIndex": 0,
+            "rttEnabled": true,
+            "programBinary": "./target/thumbv6m-none-eabi/debug/rusty-lidar"
+          }
+        ],
+        "env": {
+          "RUST_LOG": "info",
+          "DEFMT_LOG": "info"
+        }
+      }
+    ]
+  }
+  

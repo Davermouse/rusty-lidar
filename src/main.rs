@@ -4,8 +4,9 @@
 
 #![no_std]
 #![no_main]
+#![feature(array_chunks)]
 
-//mod leds;
+mod leds;
 mod lidar;
 
 use cyw43_pio::PioSpi;
@@ -20,6 +21,7 @@ use embassy_rp::peripherals::{ DMA_CH0, PIO0, PIO1, UART0};
 use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::uart::BufferedInterruptHandler;
 use embassy_time::{Duration, Timer};
+use leds::led_task;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -46,6 +48,11 @@ assign_resources! {
         rx: PIN_17,
         tx: PIN_16,
     },
+    leds: LedResources {
+        pio: PIO1,
+        dtr: PIN_15,
+        dma: DMA_CH1,
+    }
 }
 
 async fn setup_wifi(r: WifiResources, spawner: Spawner) -> cyw43::Control<'static> {
@@ -90,6 +97,8 @@ async fn main(spawner: Spawner) {
 
     let mut control = setup_wifi(r.wifi, spawner).await;
 
+    spawner.spawn(led_task(r.leds)).unwrap();
+
     spawn_core1(
         p.CORE1,
         unsafe { &mut *core::ptr::addr_of_mut!(CORE1_STACK) }, 
@@ -108,10 +117,12 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, false).await;
         Timer::after(delay).await;
 
+        /* 
         lidar::LIDAR_DATA.lock(|x| {
             let reading = x.borrow();
 
             info!("Distance 270: {} {}", reading.distances[270], reading.intensities[270]);
         });
+        */
     }
 }

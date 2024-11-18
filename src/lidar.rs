@@ -43,8 +43,10 @@ where UART: Instance {
     }
 
     async fn reset_lidar(&mut self) {
+        warn!("Resetting LIDAR");
+
         self.tx.write("e".as_bytes()).await.unwrap();
-        Timer::after_millis(500).await;
+        Timer::after_millis(1000).await;
         self.tx.write("b".as_bytes()).await.unwrap();
     }
 
@@ -61,6 +63,8 @@ where UART: Instance {
                 Ok(_) => {
                     if self.buffer[0] != 250 {
                         warn!("Unexpected buffer content");
+                        self.reset_lidar().await;
+
                         continue;
                     }
 
@@ -102,7 +106,7 @@ pub fn setup_lidar(r: crate::LidarResources, irqs: Irqs, spawner: Spawner) {
     let rx_buf = &mut RX_BUF.init([0; 256])[..];
     let uart = BufferedUart::new(r.uart, irqs, r.tx, r.rx, tx_buf, rx_buf, uart_config);
 
-    spawner.spawn(lidar_task(uart));
+    unwrap!(spawner.spawn(lidar_task(uart)));
 }
 
 #[embassy_executor::task]
