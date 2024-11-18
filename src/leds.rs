@@ -1,3 +1,5 @@
+use core::cmp;
+
 use embassy_rp::{peripherals::PIO1, pio::Pio, pio_programs::ws2812::{PioWs2812, PioWs2812Program}, Peripheral};
 
 use embassy_time::{Duration, Ticker};
@@ -53,7 +55,7 @@ pub async fn led_task(p: crate::LedResources) {
 
     let mut data = [RGB8::default(); LED_COUNT];
 
-    let mut ticker = Ticker::every(Duration::from_millis(20));
+    let mut ticker: Ticker = Ticker::every(Duration::from_millis(20));
     loop {
         debug!("New Colors:");
 
@@ -61,12 +63,30 @@ pub async fn led_task(p: crate::LedResources) {
             let reading = x.borrow();
 
             let degrees_per_led = 360 / LED_COUNT;
-            let max_dist = 7000;
+            let max_dist = 3000.0;
 
-            for (i, r) in reading.distances.array_chunks::<6>().enumerate() {
+            for (i, r) in reading.intensities.array_chunks::<6>().enumerate() {
                 let total = r.iter().map(|e| *e as u32).sum::<u32>();
 
-                data[i] = ((total / max_dist * 255) as u8, 0, 0).into();
+                let avg_dist = cmp::min((total as f32 / 6.0) as u32, max_dist as u32);
+
+                let scaled_dist = avg_dist as f32 / max_dist;
+
+                let brightness = (scaled_dist * 100.0) as u8;
+
+
+                if i == 0 {
+                    info!("Total {} avg {} Scaled {} Brightness {}", total, avg_dist, scaled_dist, brightness);
+                }
+                
+
+                data[i] = (brightness, 0, 0).into();
+
+           //     data[i] = (255, 255, 255). into();
+
+                if i > 10 {
+            //        break;
+                }
             }
 
        //     info!("Distance 270: {} {}", reading.distances[270], reading.intensities[270]);
