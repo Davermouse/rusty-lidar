@@ -13,13 +13,15 @@ use static_cell::StaticCell;
 use crate::Irqs;
 
 pub struct LidarData {
+    pub reset_count: u32,
+    pub success_count: u32,
     pub rpm: u16,
     pub distances: [u16; 360],
     pub intensities: [u16; 360],
 }
 
 pub static LIDAR_DATA: blocking_mutex::Mutex<CriticalSectionRawMutex, RefCell<LidarData>> =
-    blocking_mutex::Mutex::new(RefCell::new(LidarData { rpm: 0, distances: [0 ; 360], intensities: [0 ; 360] }));
+    blocking_mutex::Mutex::new(RefCell::new(LidarData { reset_count: 0, success_count: 0, rpm: 0, distances: [0 ; 360], intensities: [0 ; 360] }));
 
 pub struct LidarManager<'d, UART>
 where UART: Instance {
@@ -38,7 +40,7 @@ where UART: Instance {
             tx: tx,
             rx: rx,
         };
-
+        
         return lidar;
     }
 
@@ -46,8 +48,16 @@ where UART: Instance {
         warn!("Resetting LIDAR");
 
         self.tx.write("e".as_bytes()).await.unwrap();
+        self.tx.flush().await.unwrap();
         Timer::after_millis(1000).await;
         self.tx.write("b".as_bytes()).await.unwrap();
+        self.tx.flush().await.unwrap();
+
+        LIDAR_DATA.lock(|x| {
+            let mut lidar_readings = x.borrow_mut();
+
+            lidar_readings.reset_count += 1;
+        });
     }
 
     async fn run_lidar(mut self) {
@@ -57,6 +67,7 @@ where UART: Instance {
             match self.rx.read_exact(&mut self.buffer).await {
                 Err(err) => {
                     warn!("Error reading from LIDAR {}", err);
+                    
                     self.reset_lidar().await;
                     continue;
                 }
@@ -78,6 +89,7 @@ where UART: Instance {
                     LIDAR_DATA.lock(|x| {
                         let mut lidar_readings = x.borrow_mut();
 
+                        lidar_readings.success_count += 1;
                         lidar_readings.rpm = ((self.buffer[3] as u16) << 8) | self.buffer[2] as u16;
 
                         for i in 0..6 {

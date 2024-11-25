@@ -1,6 +1,6 @@
-use core::cmp;
+use core::{cmp, u16};
 
-use embassy_rp::{peripherals::PIO1, pio::Pio, pio_programs::ws2812::{PioWs2812, PioWs2812Program}, Peripheral};
+use embassy_rp::{peripherals::PIO1, pio::Pio, pio_programs::ws2812::{PioWs2812, PioWs2812Program}};
 
 use embassy_time::{Duration, Ticker};
 use smart_leds::RGB8;
@@ -10,6 +10,11 @@ use defmt::*;
 use crate::lidar;
 
 static LED_COUNT: usize = 60;
+static LEDS_PER_DEGREE: usize = 360 / LED_COUNT;
+static REFRESH_TIME: u64 = 20;
+
+static MAX_DISTANCE: i32 = 500;
+static MIN_DISTANCE: f32 = 60.0;
 
 pub struct LEDManager{
 
@@ -45,7 +50,7 @@ fn wheel(mut wheel_pos: u8) -> RGB8 {
 pub async fn led_task(p: crate::LedResources) {
     info!("Starting LED task");
 
-    let Pio { mut common, sm0, .. } = Pio::new(p.pio, crate::Irqs);
+    let Pio { mut common, sm0, sm1, .. } = Pio::new(p.pio, crate::Irqs);
 
     let program = PioWs2812Program::new(&mut common);
     let mut ws2812: PioWs2812<'_, PIO1, 0, LED_COUNT> = 
@@ -54,49 +59,56 @@ pub async fn led_task(p: crate::LedResources) {
     let led_manager = LEDManager::new();
 
     let mut data = [RGB8::default(); LED_COUNT];
+    let mut led_distances = [0;360];
+    let mut led_intensities = [0;360];
 
-    let mut ticker: Ticker = Ticker::every(Duration::from_millis(20));
+    let mut ticker: Ticker = Ticker::every(Duration::from_millis(REFRESH_TIME));
+
+    let degrees_per_led = 360 / LED_COUNT;
+    
     loop {
         debug!("New Colors:");
 
         lidar::LIDAR_DATA.lock(|x| {
             let reading = x.borrow();
 
-            let degrees_per_led = 360 / LED_COUNT;
-            let max_dist = 3000.0;
+            led_distances.copy_from_slice(&reading.distances);
+            led_intensities.copy_from_slice(&reading.intensities);
+        });
 
-            for (i, r) in reading.intensities.array_chunks::<6>().enumerate() {
-                let total = r.iter().map(|e| *e as u32).sum::<u32>();
+        let min_intensity = 100;
 
-                let avg_dist = cmp::min((total as f32 / 6.0) as u32, max_dist as u32);
+        for (i, r) in 
+                led_intensities.iter().zip(led_distances).array_chunks::<LEDS_PER_DEGREE>().enumerate() {
+                    let total_intensity = r.iter().map(|e| *e.0 as i32).sum::<i32>();
+                    let total_distance = r.iter().map(|e| e.1 as i32).sum::<i32>();
 
-                let scaled_dist = avg_dist as f32 / max_dist;
+                    let avg_intensity = total_intensity as f32 / LEDS_PER_DEGREE as f32;
+                    let mut avg_distance = total_distance as f32 / LEDS_PER_DEGREE as f32;
 
-                let brightness = (scaled_dist * 100.0) as u8;
+                    // If we can't get a reading, we end up with a distance of 0
+                    // but a very low intensity, so treat as very far
+                    if avg_intensity < min_intensity as f32 || 
+                        avg_distance > MAX_DISTANCE as f32 || 
+                        avg_distance < MIN_DISTANCE {
+                        avg_distance = MAX_DISTANCE as f32;
+                    }
 
+                    let flipped_distance = MIN_DISTANCE as f32 - avg_distance;
 
-                if i == 0 {
-                    info!("Total {} avg {} Scaled {} Brightness {}", total, avg_dist, scaled_dist, brightness);
+                    let scaled_dist = flipped_distance as f32 / MAX_DISTANCE as f32;
+
+                    let brightness = (scaled_dist * 50.0) as u8;
+
+                    let scaled_intensity = avg_intensity / u16::MAX as f32;
+
+                    data[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
+
+                    if i == 0 {
+              //          info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
+                    }
                 }
                 
-
-                data[i] = (brightness, 0, 0).into();
-
-           //     data[i] = (255, 255, 255). into();
-
-                if i > 10 {
-            //        break;
-                }
-            }
-
-       //     info!("Distance 270: {} {}", reading.distances[270], reading.intensities[270]);
-        });
-        /*
-        for i in 0..LED_COUNT {
-            data[i] = wheel((((i * 256) as u16 / LED_COUNT as u16 + j as u16) & 255) as u8);
-            debug!("R: {} G: {} B: {}", data[i].r, data[i].g, data[i].b);
-        }
-        */
         ws2812.write(&data).await;
 
         ticker.next().await;

@@ -5,6 +5,7 @@
 #![no_std]
 #![no_main]
 #![feature(array_chunks)]
+#![feature(iter_array_chunks)]
 
 mod leds;
 mod lidar;
@@ -117,12 +118,10 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, false).await;
         Timer::after(delay).await;
 
-        /* 
         lidar::LIDAR_DATA.lock(|x| {
             let reading = x.borrow();
 
-            info!("Distance 270: {} {}", reading.distances[270], reading.intensities[270]);
+            info!("Reset count: {} success count: {} - distance 0: {} {}", reading.reset_count, reading.success_count, reading.distances[0], reading.intensities[0]);
         });
-        */
     }
 }
