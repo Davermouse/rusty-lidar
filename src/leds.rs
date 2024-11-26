@@ -48,6 +48,39 @@ fn wheel(mut wheel_pos: u8) -> RGB8 {
     (wheel_pos * 3, 255 - wheel_pos * 3, 0).into()
 }
 
+pub fn hsv_to_rgb(hue: f32, saturation: f32, value: f32) -> RGB8 {
+    fn is_between(value: f32, min: f32, max: f32) -> bool {
+        min <= value && value < max
+    }
+
+    //check_bounds(hue, saturation, value);
+
+    let c = value * saturation;
+    let h = hue / 60.0;
+    let x = c * (1.0 - ((h % 2.0) - 1.0).abs());
+    let m = value - c;
+
+    let (r, g, b): (f32, f32, f32) = if is_between(h, 0.0, 1.0) {
+        (c, x, 0.0).into()
+    } else if is_between(h, 1.0, 2.0) {
+        (x, c, 0.0).into()
+    } else if is_between(h, 2.0, 3.0) {
+        (0.0, c, x).into()
+    } else if is_between(h, 3.0, 4.0) {
+        (0.0, x, c).into()
+    } else if is_between(h, 4.0, 5.0) {
+        (x, 0.0, c).into()
+    } else {
+        (c, 0.0, x).into()
+    };
+
+    (
+        ((r + m) * 255.0) as u8,
+        ((g + m) * 255.0) as u8,
+        ((b + m) * 255.0) as u8,
+    ).into()
+}
+
 #[embassy_executor::task]
 pub async fn led_task(p: crate::LedResources) {
     info!("Starting LED task");
@@ -60,7 +93,8 @@ pub async fn led_task(p: crate::LedResources) {
 
     let led_manager = LEDManager::new();
 
-    let mut data = [RGB8::default(); LED_COUNT];
+    let mut curr_leds = [RGB8::default(); LED_COUNT];
+    let mut target_leds = [RGB8::default(); LED_COUNT];
     let mut led_distances = [0;360];
     let mut led_intensities = [0;360];
 
@@ -102,14 +136,22 @@ pub async fn led_task(p: crate::LedResources) {
 
                     let scaled_intensity = avg_intensity / u16::MAX as f32;
 
-                    data[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
+                    //hsv_to_rgb(scaled_dist, scaled_intensity, 0.2f) 
+                    target_leds[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
 
                     if i == 0 {
                         info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
                     }
                 }
+
+        for n in 0..60 {
+            let dr = curr_leds[n].r as i16 - target_leds[n].r as i16;
+
+            curr_leds[n].r += (0.1 * dr as f32) as u8;
+            curr_leds[n].g = target_leds[n].g;
+        }
                 
-        ws2812.write(&data).await;
+        ws2812.write(&curr_leds).await;
 
         ticker.next().await;
     }
