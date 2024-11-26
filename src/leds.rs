@@ -16,6 +16,8 @@ static REFRESH_TIME: u64 = 20;
 static MAX_DISTANCE: i32 = 500;
 static MIN_DISTANCE: f32 = 60.0;
 
+static MIN_INTENSITY: f32 = 100.0;
+
 pub struct LEDManager{
 
 }
@@ -76,8 +78,6 @@ pub async fn led_task(p: crate::LedResources) {
             led_intensities.copy_from_slice(&reading.intensities);
         });
 
-        let min_intensity = 100;
-
         for (i, r) in 
                 led_intensities.iter().zip(led_distances).array_chunks::<LEDS_PER_DEGREE>().enumerate() {
                     let total_intensity = r.iter().map(|e| *e.0 as i32).sum::<i32>();
@@ -88,13 +88,13 @@ pub async fn led_task(p: crate::LedResources) {
 
                     // If we can't get a reading, we end up with a distance of 0
                     // but a very low intensity, so treat as very far
-                    if avg_intensity < min_intensity as f32 || 
+                    if avg_intensity < MIN_INTENSITY as f32 || 
                         avg_distance > MAX_DISTANCE as f32 || 
                         avg_distance < MIN_DISTANCE {
                         avg_distance = MAX_DISTANCE as f32;
                     }
 
-                    let flipped_distance = MIN_DISTANCE as f32 - avg_distance;
+                    let flipped_distance = MAX_DISTANCE as f32 - avg_distance;
 
                     let scaled_dist = flipped_distance as f32 / MAX_DISTANCE as f32;
 
@@ -105,7 +105,7 @@ pub async fn led_task(p: crate::LedResources) {
                     data[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
 
                     if i == 0 {
-              //          info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
+                        info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
                     }
                 }
                 
