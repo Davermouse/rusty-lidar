@@ -7,7 +7,7 @@ edition = "2021"
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"] }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp235xa"] }
 
 cyw43 = {git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "firmware-logs"] }
 cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt"] }

@@ -14,6 +14,7 @@ use cyw43_pio::PioSpi;
 use defmt::*;
 use assign_resources::assign_resources;
 use embassy_executor::{Executor, Spawner};
+use embassy_rp::block::ImageDef;
 use embassy_rp::multicore::{spawn_core1, Stack};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
@@ -25,6 +26,10 @@ use embassy_time::{Duration, Timer};
 use leds::led_task;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
+
+#[link_section = ".start_block"]
+#[used]
+pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
 
 static mut CORE1_STACK: Stack<4096> = Stack::new();
 static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
