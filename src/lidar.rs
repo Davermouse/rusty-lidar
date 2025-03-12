@@ -3,7 +3,7 @@ use core::cell::RefCell;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex;
-use embassy_time::Timer;
+use embassy_time::{Instant, Timer};
 use embassy_rp::uart::{self, BufferedUart, BufferedUartRx, BufferedUartTx, Instance};
 use embassy_rp::peripherals::UART0;
 use embedded_io_async::{Read, Write};
@@ -15,13 +15,14 @@ use crate::Irqs;
 pub struct LidarData {
     pub reset_count: u32,
     pub success_count: u32,
+    pub last_reading: Instant,
     pub rpm: u16,
     pub distances: [u16; 360],
     pub intensities: [u16; 360],
 }
 
 pub static LIDAR_DATA: blocking_mutex::Mutex<CriticalSectionRawMutex, RefCell<LidarData>> =
-    blocking_mutex::Mutex::new(RefCell::new(LidarData { reset_count: 0, success_count: 0, rpm: 0, distances: [0 ; 360], intensities: [0 ; 360] }));
+    blocking_mutex::Mutex::new(RefCell::new(LidarData { reset_count: 0, success_count: 0, last_reading: Instant::MIN, rpm: 0, distances: [0 ; 360], intensities: [0 ; 360] }));
 
 pub struct LidarManager<'d, UART>
 where UART: Instance {
@@ -101,6 +102,8 @@ where UART: Instance {
                             lidar_readings.distances[degree + i] = dist;
                             lidar_readings.intensities[degree + i] = intensity;
                         }
+
+                        lidar_readings.last_reading = Instant::now();
                     });
                 },
             }

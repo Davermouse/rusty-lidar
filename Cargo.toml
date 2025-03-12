@@ -3,14 +3,17 @@ name = "rusty-lidar"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"] }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt"] }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "defmt-timestamp-uptime"] }
-embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+[features]
+pico_w = []
 
-cyw43 = {git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt", "firmware-logs"] }
-cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "b793d31f25cbf2388f6073cd795ddda996829335", features = ["defmt"] }
+[dependencies]
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["task-arena-size-98304", "arch-cortex-m", "executor-thread", "executor-interrupt", "defmt", "integrated-timers"] }
+embassy-sync = { git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["defmt"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["defmt", "defmt-timestamp-uptime"] }
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+
+cyw43 = {git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["defmt", "firmware-logs"] }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", rev = "04c1d69de9d5f0d9285015daba631aeef123b00e", features = ["defmt"] }
 
 defmt = "0.3"
 defmt-rtt = "0.4"

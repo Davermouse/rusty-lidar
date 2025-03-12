@@ -13,23 +13,133 @@ static LED_COUNT: usize = 60;
 static LEDS_PER_DEGREE: usize = 360 / LED_COUNT;
 static REFRESH_TIME: u64 = 20;
 
-static MAX_DISTANCE: i32 = 500;
+static MAX_DISTANCE: i32 = 400;
 static MIN_DISTANCE: f32 = 60.0;
 
 static MIN_INTENSITY: f32 = 100.0;
 
-pub struct LEDManager{
-
+enum LEDState {
+    LIDAR,
+    Loading,
 }
 
-impl<'d> LEDManager {
-    pub fn new() -> LEDManager {
+pub struct LEDManager<'d> {
+    ticks: u32,
+    state: LEDState,
+    leds: PioWs2812<'d, PIO1, 0, LED_COUNT>,
+    target_leds: [RGB8 ; LED_COUNT],
+}
+
+impl<'d> LEDManager<'d> {
+    pub fn new(leds: PioWs2812<'d, PIO1, 0, LED_COUNT>) -> LEDManager {
 
         let led_manager = Self {
-
+            ticks: 0,
+            state: LEDState::LIDAR,
+            leds,
+            target_leds: [RGB8::default() ; LED_COUNT]
         };
 
         return led_manager;
+    }
+
+    pub async fn run(mut self) {
+        let mut curr_leds = [RGB8::default(); LED_COUNT];
+     //   let mut target_leds = [RGB8::default(); LED_COUNT];
+        let mut led_distances = [0;360];
+        let mut led_intensities = [0;360];
+
+        let mut ticker: Ticker = Ticker::every(Duration::from_millis(REFRESH_TIME));
+
+        let degrees_per_led = 360 / LED_COUNT;
+        
+        loop {
+            debug!("New Colors:");
+
+            match self.state {
+                LEDState::LIDAR => {
+                    lidar::LIDAR_DATA.lock(|x| {
+                        let reading = x.borrow();
+
+                        led_distances.copy_from_slice(&reading.distances);
+                        led_intensities.copy_from_slice(&reading.intensities);
+                    });
+
+                    for (i, r) in 
+                            led_intensities.iter().zip(led_distances).array_chunks::<LEDS_PER_DEGREE>().enumerate() {
+                                let total_intensity = r.iter().map(|e| *e.0 as i32).sum::<i32>();
+                                let total_distance = r.iter().map(|e| e.1 as i32).sum::<i32>();
+
+                                let avg_intensity = total_intensity as f32 / LEDS_PER_DEGREE as f32;
+                                let mut avg_distance = total_distance as f32 / LEDS_PER_DEGREE as f32;
+
+                                // If we can't get a reading, we end up with a distance of 0
+                                // but a very low intensity, so treat as very far
+                                if avg_intensity < MIN_INTENSITY as f32 || 
+                                    avg_distance > MAX_DISTANCE as f32 || 
+                                    avg_distance < MIN_DISTANCE {
+                                    avg_distance = MAX_DISTANCE as f32;
+                                }
+
+                                let flipped_distance = MAX_DISTANCE as f32 - avg_distance;
+
+                                let scaled_dist = flipped_distance as f32 / MAX_DISTANCE as f32;
+
+                                let brightness = (scaled_dist * 50.0) as u8;
+
+                                let scaled_intensity = avg_intensity / u16::MAX as f32;
+
+                                //hsv_to_rgb(scaled_dist, scaled_intensity, 0.2f) 
+                                self.target_leds[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
+
+                                if i == 0 {
+                                    //info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
+                                }
+                            }
+
+                  /*   for n in 0..60 {
+                        let dr = curr_leds[n].r as i16 - target_leds[n].r as i16;
+
+                        curr_leds[n].r += (0.1 * dr as f32) as u8;
+                        curr_leds[n].g = self.target_leds[n].g;
+                    }*/
+            },
+                LEDState::Loading => {
+                   self.update_loading();
+            }
+        }
+                    
+            self.leds.write(&self.target_leds).await;
+
+            self.ticks += 1;
+/* 
+            if self.ticks % 500  == 0{
+                info!("New state");
+
+                match self.state {
+                    LEDState::LIDAR => self.start_loading(),
+                    LEDState::Loading => self.state = LEDState::LIDAR,
+                }
+            }
+*/
+            ticker.next().await;
+        }
+    }
+
+    fn start_loading(&mut self) {
+        self.state = LEDState::Loading;
+    }
+
+    fn update_loading(&mut self) {
+        self.target_leds.fill((0, 0, 0).into());
+
+        let colour = wheel((self.ticks % 255) as u8);
+
+        self.target_leds[(self.ticks % 60) as usize] = colour;
+     //   self.target_leds[(self.ticks - 1 % 60) as usize] = (0, 0, 40).into();
+        self.target_leds[((self.ticks + 15) % 60) as usize] = colour;
+        self.target_leds[((self.ticks + 30) % 60) as usize] = colour;
+        self.target_leds[((self.ticks + 45) % 60) as usize] = colour;
     }
 }
 
@@ -91,68 +201,7 @@ pub async fn led_task(p: crate::LedResources) {
     let mut ws2812: PioWs2812<'_, PIO1, 0, LED_COUNT> = 
         PioWs2812::new(&mut common, sm0, p.dma, p.dtr, &program);
 
-    let led_manager = LEDManager::new();
+    let led_manager = LEDManager::new(ws2812);
 
-    let mut curr_leds = [RGB8::default(); LED_COUNT];
-    let mut target_leds = [RGB8::default(); LED_COUNT];
-    let mut led_distances = [0;360];
-    let mut led_intensities = [0;360];
-
-    let mut ticker: Ticker = Ticker::every(Duration::from_millis(REFRESH_TIME));
-
-    let degrees_per_led = 360 / LED_COUNT;
-    
-    loop {
-        debug!("New Colors:");
-
-        lidar::LIDAR_DATA.lock(|x| {
-            let reading = x.borrow();
-
-            led_distances.copy_from_slice(&reading.distances);
-            led_intensities.copy_from_slice(&reading.intensities);
-        });
-
-        for (i, r) in 
-                led_intensities.iter().zip(led_distances).array_chunks::<LEDS_PER_DEGREE>().enumerate() {
-                    let total_intensity = r.iter().map(|e| *e.0 as i32).sum::<i32>();
-                    let total_distance = r.iter().map(|e| e.1 as i32).sum::<i32>();
-
-                    let avg_intensity = total_intensity as f32 / LEDS_PER_DEGREE as f32;
-                    let mut avg_distance = total_distance as f32 / LEDS_PER_DEGREE as f32;
-
-                    // If we can't get a reading, we end up with a distance of 0
-                    // but a very low intensity, so treat as very far
-                    if avg_intensity < MIN_INTENSITY as f32 || 
-                        avg_distance > MAX_DISTANCE as f32 || 
-                        avg_distance < MIN_DISTANCE {
-                        avg_distance = MAX_DISTANCE as f32;
-                    }
-
-                    let flipped_distance = MAX_DISTANCE as f32 - avg_distance;
-
-                    let scaled_dist = flipped_distance as f32 / MAX_DISTANCE as f32;
-
-                    let brightness = (scaled_dist * 50.0) as u8;
-
-                    let scaled_intensity = avg_intensity / u16::MAX as f32;
-
-                    //hsv_to_rgb(scaled_dist, scaled_intensity, 0.2f) 
-                    target_leds[i] = (brightness, (scaled_intensity * 50.0) as u8, 0).into();
-
-                    if i == 0 {
-                        info!("Total intensity {} Total distance {} flip {} Scaled {} Brightness {}", avg_intensity, avg_distance, flipped_distance, scaled_dist, brightness);
-                    }
-                }
-
-        for n in 0..60 {
-            let dr = curr_leds[n].r as i16 - target_leds[n].r as i16;
-
-            curr_leds[n].r += (0.1 * dr as f32) as u8;
-            curr_leds[n].g = target_leds[n].g;
-        }
-                
-        ws2812.write(&curr_leds).await;
-
-        ticker.next().await;
-    }
+    led_manager.run().await;
 }

@@ -53,10 +53,25 @@ assign_resources! {
         pio: PIO1,
         dtr: PIN_15,
         dma: DMA_CH1,
-    }
+    },
+    buttons: ButtonResources {
+
+    },
+    sound: SoundResources {
+        bit_clock: PIN_18,
+        lr_clock_pin: PIN_19,
+        data: PIN_20,
+        dma: DMA_CH2,
+    },
 }
 
-async fn setup_wifi(r: WifiResources, spawner: Spawner) -> cyw43::Control<'static> {
+#[cfg(not(feature = "pico_w"))]
+async fn setup_wifi(r: WifiResources, spawner: Spawner) -> Option<cyw43::Control<'static>> {
+    None
+}
+
+#[cfg(feature = "pico_w")]
+async fn setup_wifi(r: WifiResources, spawner: Spawner) -> Option<cyw43::Control<'static>> {
     let fw = include_bytes!("../cyw43-firmware/43439A0.bin");
     let clm = include_bytes!("../cyw43-firmware/43439A0_clm.bin");
 
@@ -82,9 +97,11 @@ async fn setup_wifi(r: WifiResources, spawner: Spawner) -> cyw43::Control<'stati
         .set_power_management(cyw43::PowerManagementMode::PowerSave)
         .await;
 
-    return control;
+    return Some(control);
 }
 
+
+#[cfg(feature = "pico_w")]
 #[embassy_executor::task]
 async fn cyw43_task(runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>) -> ! {
     runner.run().await
@@ -111,17 +128,24 @@ async fn main(spawner: Spawner) {
     let delay = Duration::from_secs(1);
     loop {
         info!("led on!");
-        control.gpio_set(0, true).await;
+        match control {
+            None => debug!("LED ON"),
+            Some(ref mut c) => c.gpio_set(0, true).await
+        };
+
         Timer::after(delay).await;
 
         info!("led off!");
-        control.gpio_set(0, false).await;
+        match control {
+            None => debug!("LED OFF"),
+            Some(ref mut c) => c.gpio_set(0, false).await
+        };
         Timer::after(delay).await;
 
         lidar::LIDAR_DATA.lock(|x| {
             let reading = x.borrow();
 
-            info!("Reset count: {} success count: {} - distance 0: {} {}", reading.reset_count, reading.success_count, reading.distances[0], reading.intensities[0]);
+            info!("Reset count: {} success count: {} last_reading: {} - distance 0: {} {}", reading.reset_count, reading.success_count, reading.last_reading, reading.distances[0], reading.intensities[0]);
         });
     }
 }
